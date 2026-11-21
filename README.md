@@ -97,9 +97,13 @@ Reasoning models such as gemma4 spend tokens thinking before they answer:
 ./otop.sh                        # dashboard + token proxy on :11435
 ./otop.sh --no-proxy             # dashboard only
 ./otop.sh --proxy-port 9999      # proxy on a different port
+./otop.sh --host 0.0.0.0         # accept proxy clients from other machines
 ./otop.sh --upstream http://other-host:11434
 ./otop.sh --refresh 8            # UI redraws per second (default 4)
 ```
+
+The proxy has no authentication, so `--host 0.0.0.0` lets anyone who can reach the port
+use your Ollama server. Only use it on a trusted network.
 
 ## How it works
 
