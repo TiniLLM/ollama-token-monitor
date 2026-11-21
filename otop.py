@@ -240,7 +240,7 @@ async def proxy_handler(request: web.Request, upstream: str, session: ClientSess
         return web.json_response({"error": f"otop proxy: {e}"}, status=502)
 
 
-async def start_proxy(port: int, upstream: str):
+async def start_proxy(host: str, port: int, upstream: str):
     session = ClientSession(
         timeout=ClientTimeout(total=None, sock_connect=5),
         connector=TCPConnector(limit=100),
@@ -253,9 +253,9 @@ async def start_proxy(port: int, upstream: str):
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     try:
-        await web.TCPSite(runner, "127.0.0.1", port).start()
+        await web.TCPSite(runner, host, port).start()
     except OSError as e:
-        STATE.proxy_error = f"proxy failed to bind :{port} ({e.strerror})"
+        STATE.proxy_error = f"proxy failed to bind {host}:{port} ({e.strerror})"
     return runner, session
 
 # ---------------------------------------------------------------- collectors
@@ -389,7 +389,7 @@ def sparkline(values, width=40):
     return Text("".join(SPARK[min(7, int(v / peak * 7.999))] for v in vals), style="magenta")
 
 
-def render_header(proxy_port, no_proxy):
+def render_header(proxy_host, proxy_port, no_proxy):
     status = Text()
     if STATE.ollama_ok:
         status.append(" ● ", style="bold green")
@@ -402,7 +402,7 @@ def render_header(proxy_port, no_proxy):
     elif STATE.proxy_error:
         status.append(STATE.proxy_error, style="bold red")
     else:
-        status.append(f"token proxy → 127.0.0.1:{proxy_port}", style="bold yellow")
+        status.append(f"token proxy → {proxy_host}:{proxy_port}", style="bold yellow")
     up = time.time() - STATE.session_start
     status.append(f"   session {int(up // 60)}m{int(up % 60):02d}s", style="dim")
     return Panel(status, title="[bold]otop – ollama monitor[/]", border_style="blue")
@@ -535,10 +535,10 @@ def render_models():
     return Panel(tbl, title="[bold blue]loaded models[/]", border_style="blue")
 
 
-def render(proxy_port, no_proxy):
+def render(proxy_host, proxy_port, no_proxy):
     layout = Layout()
     layout.split_column(
-        Layout(render_header(proxy_port, no_proxy), size=3),
+        Layout(render_header(proxy_host, proxy_port, no_proxy), size=3),
         Layout(render_tokens(), size=12),
         Layout(name="mid"),
         Layout(render_models(), size=6),
@@ -552,6 +552,9 @@ async def main():
     ap = argparse.ArgumentParser(description="live ollama monitor")
     ap.add_argument("--upstream", default="http://127.0.0.1:11434",
                     help="ollama server url (default: %(default)s)")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="address the proxy listens on; use 0.0.0.0 for all "
+                         "interfaces (default: %(default)s)")
     ap.add_argument("--proxy-port", type=int, default=11435,
                     help="token-counting proxy port (default: %(default)s)")
     ap.add_argument("--no-proxy", action="store_true", help="disable the proxy")
@@ -567,15 +570,15 @@ async def main():
     ]
     runner = session = None
     if not args.no_proxy:
-        runner, session = await start_proxy(args.proxy_port, args.upstream)
+        runner, session = await start_proxy(args.host, args.proxy_port, args.upstream)
 
     console = Console()
     try:
-        with Live(render(args.proxy_port, args.no_proxy), console=console,
+        with Live(render(args.host, args.proxy_port, args.no_proxy), console=console,
                   screen=True, refresh_per_second=args.refresh) as live:
             while True:
                 await asyncio.sleep(1.0 / args.refresh)
-                live.update(render(args.proxy_port, args.no_proxy))
+                live.update(render(args.host, args.proxy_port, args.no_proxy))
     finally:
         for t in tasks:
             t.cancel()
